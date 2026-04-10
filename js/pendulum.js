@@ -15,31 +15,24 @@
  * ただし28°の初期角度では非線形補正により約2%長くなる。
  */
 
-// ─── 物理定数（全振り子共通） ─────────────────────────────
-// 基準となる振り子（周期20秒、長さ12.0m）から共通の重力Gを算定
-const REF_T   = 20.0;
-const REF_L   = 12.0;
-export const G = REF_L * Math.pow((2 * Math.PI) / REF_T, 2); 
-const DAMPING = 0.0;                   // 空気抵抗はゼロ
-
-// すべての振り子で統一したい視覚的な最大振幅（Z軸方向）
-const TARGET_AMPLITUDE = 3.05;
-const DT_CAP  = 0.05;                  // タブ復帰時などの dt 上限 [s]
+import { CONFIG, G } from "./config.js";
 
 // ─── PendulumController クラス ─────────────────────────────
 export class PendulumController {
   /**
    * @param {number} period - 目標とする周期 [s]
    * @param {number} xOffset - X軸上の配置位置
+   * @param {number} mass - 振り子の質量（デフォルト1.0）
    */
-  constructor(period = 20.0, xOffset = 0) {
+  constructor(period = 20.0, xOffset = 0, mass = 1.0) {
     this.period = period;
     this.xOffset = xOffset;
+    this.mass = mass;
 
     // 共通の重力 G の元で指定の周期になるよう紐の長さを動的計算
     this.L = G * Math.pow(this.period / (2 * Math.PI), 2);
-    // 振幅（TARGET_AMPLITUDE）に到達するために必要な最大角度
-    this.thetaMax = Math.asin(TARGET_AMPLITUDE / this.L);
+    // 振幅に到達するために必要な最大角度
+    this.thetaMax = Math.asin(CONFIG.PHYSICS.TARGET_AMPLITUDE / this.L);
 
     // リロード時に「画面真ん中の最下点」からスタートさせる
     this._theta    = 0; 
@@ -52,7 +45,7 @@ export class PendulumController {
   // ─── 状態微分関数 ─────────────────────────────────────────
   _derivatives(theta, omega) {
     const dTheta = omega;
-    const dOmega = -(G / this.L) * Math.sin(theta) - DAMPING * omega;
+    const dOmega = -(G / this.L) * Math.sin(theta) - CONFIG.PHYSICS.DAMPING * omega;
     return [dTheta, dOmega];
   }
 
@@ -88,7 +81,7 @@ export class PendulumController {
     this._lastTime = timestamp;
 
     // タブが非アクティブから復帰した場合などに dt が巨大になるのを防ぐ
-    const dt = Math.min(rawDt, DT_CAP);
+    const dt = Math.min(rawDt, CONFIG.PHYSICS.DT_CAP);
     const prevTheta = this._theta;
 
     // RK4 で状態を 1 ステップ更新
@@ -118,5 +111,12 @@ export class PendulumController {
    */
   getVelocity() {
     return this._omega * this.L;
+  }
+
+  /**
+   * 振り子の質量を返す
+   */
+  getMass() {
+    return this.mass;
   }
 }

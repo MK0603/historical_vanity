@@ -12,12 +12,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { MainScene } from "./scene.js?v=2";
 import { PendulumController } from "./pendulum.js?v=2";
-import {
-  getViewport,
-  normalizeMousePosition,
-  animateLoadingBar,
-  FpsCounter,
-} from "./utils.js";
+import { getViewport, normalizeMousePosition, animateLoadingBar, FpsCounter } from "./utils.js";
+import { CONFIG } from "./config.js";
 
 // ============================================================
 // DOM 参照
@@ -59,17 +55,14 @@ applyRendererSize();
 const mainScene = new MainScene(renderer);
 
 // ============================================================
-// 振り子 物理コントローラー（3つ並列）
+// 振り子 物理コントローラー（config.jsから動的生成）
 // ============================================================
-// 中央を基準（20秒）とし、左右に異なる周期のものを配置
-const pendulums = [
-  new PendulumController(18.0, -3.5), // 左側: 短い周期
-  new PendulumController(20.0, 0.0),  // 中央: 基準
-  new PendulumController(22.0, 3.5)   // 右側: 長い周期
-];
+const pendulums = CONFIG.PENDULUMS.map(p => 
+  new PendulumController(p.period, p.xOffset, p.mass)
+);
 
-// scene 側に長さと位置を渡して3Dモデルを構築させる
-mainScene.initPendulums(pendulums.map(p => ({ L: p.L, xOffset: p.xOffset })));
+// scene 側に長さと位置、質量を渡して3Dモデルを構築させる
+mainScene.initPendulums(pendulums.map(p => ({ L: p.L, xOffset: p.xOffset, mass: p.getMass() })));
 // ============================================================
 // OrbitControls (カメラぐりぐり操作)
 // ============================================================

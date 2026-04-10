@@ -14,11 +14,8 @@
 import * as THREE from "three";
 import { GPUComputationRenderer } from "three/addons/misc/GPUComputationRenderer.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { CONFIG } from "./config.js";
 import { lerp } from "./utils.js";
-
-// ─── GPGPU 水面シミュレーション定数 ──────────────────────────────
-const GPU_WIDTH = 256;      // シミュレーショングリッド解像度
-const WATER_BOUNDS = 40.0;  // 物理計算する平面のサイズ [m]
 
 // 計算用フラグメントシェーダー（波の伝播とドロップの入力を行う）
 const heightmapFragmentShader = `
@@ -43,15 +40,15 @@ void main() {
   ) * 0.25;
   
   // 波動方程式: 速度(info.g) と 高さ(info.r) の更新
-  info.g += ( average - info.r ) * 2.0; 
-  info.g *= 0.99; // Damping: 波紋を美しく長く残す
+  info.g += ( average - info.r ) * ${CONFIG.WATER.WAVE_SPEED.toFixed(1)}; 
+  info.g *= ${CONFIG.WATER.WAVE_DAMPING.toFixed(3)}; // Damping: 波紋を美しく長く残す
   info.r += info.g;
   
   // マウス・振り子による衝撃処理
   for(int i = 0; i < 16; i++) {
     if(i >= numDrops) break;
-    // ワールド座標 (-20 ～ 20) を UV座標 (0.0 ～ 1.0) にマッピング
-    vec2 dropUV = (dropPos[i] + vec2(${WATER_BOUNDS / 2.0})) / ${WATER_BOUNDS.toFixed(1)};
+    // ワールド座標 を UV座標 (0.0 ～ 1.0) にマッピング
+    vec2 dropUV = (dropPos[i] + vec2(${CONFIG.WATER.BOUNDS / 2.0})) / ${CONFIG.WATER.BOUNDS.toFixed(1)};
     float dist = distance(uv, dropUV);
     // 断面積に応じた動的な半径
     if(dist < dropRadius[i] && dropRadius[i] > 0.0) { 
@@ -67,7 +64,7 @@ void main() {
 
 // ─── 振り子形状定数 ────────────────────────────────────────
 const ROD_RADIUS = 0.022; // ロッド半径
-const BOB_RADIUS = 0.40;  // 球の半径
+const BASE_BOB_RADIUS = 0.40; // 質量1.0の時の球の半径
 
 // ─── 共通メタルマテリアル（暗色系） ─────────────────────────
 function makeMetal(color, roughness = 0.25, metalness = 0.95) {
@@ -146,7 +143,7 @@ export class MainScene {
     this.scene.environment = pmremGenerator.fromScene( roomEnv ).texture;
     
     // 1. GPGPU Compute Renderer のセットアップ
-    this.gpuCompute = new GPUComputationRenderer( GPU_WIDTH, GPU_WIDTH, this.renderer );
+    this.gpuCompute = new GPUComputationRenderer( CONFIG.WATER.GPU_WIDTH, CONFIG.WATER.GPU_WIDTH, this.renderer );
     const heightmap0 = this.gpuCompute.createTexture();
     this.heightmapVariable = this.gpuCompute.addVariable( "heightmap", heightmapFragmentShader, heightmap0 );
     
@@ -160,8 +157,11 @@ export class MainScene {
     
     this.gpuCompute.init();
 
-    // 2. 超高解像度のガラス平面（256x256分割）
-    const glassGeo = new THREE.PlaneGeometry(WATER_BOUNDS, WATER_BOUNDS, GPU_WIDTH - 1, GPU_WIDTH - 1);
+    // 2. 超高解像度のガラス平面
+    const glassGeo = new THREE.PlaneGeometry(
+      CONFIG.WATER.BOUNDS, CONFIG.WATER.BOUNDS, 
+      CONFIG.WATER.GPU_WIDTH - 1, CONFIG.WATER.GPU_WIDTH - 1
+    );
     const glassMat = new THREE.MeshStandardMaterial({
       color: 0x020a15,      // かなり暗いネイビーをベースに
       roughness: 0.35,      // 【ツヤを抑える】反射をすりガラスや柔らかい水面のように拡散させる
@@ -183,14 +183,14 @@ export class MainScene {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <beginnormal_vertex>',
         `
-        vec2 texel = vec2( 1.0 / ${GPU_WIDTH.toFixed(1)}, 1.0 / ${GPU_WIDTH.toFixed(1)} );
-        float visualScale = 6.0; // 波の見た目の高さを強調(ライティング用)
+        vec2 texel = vec2( 1.0 / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)}, 1.0 / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)} );
+        float visualScale = ${CONFIG.WATER.VISUAL_SCALE.toFixed(1)}; // 波の見た目の高さを強調(ライティング用)
         float h    = texture2D( heightmap, uv ).r * visualScale;
         float hx   = texture2D( heightmap, uv + vec2( texel.x, 0.0 ) ).r * visualScale;
         float hy   = texture2D( heightmap, uv + vec2( 0.0, texel.y ) ).r * visualScale;
         
-        float stepX = ${WATER_BOUNDS.toFixed(1)} / ${GPU_WIDTH.toFixed(1)};
-        float stepY = ${WATER_BOUNDS.toFixed(1)} / ${GPU_WIDTH.toFixed(1)};
+        float stepX = ${CONFIG.WATER.BOUNDS.toFixed(1)} / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)};
+        float stepY = ${CONFIG.WATER.BOUNDS.toFixed(1)} / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)};
         
         vec3 p0 = vec3( 0.0, 0.0, h );
         vec3 px = vec3( stepX, 0.0, hx );
@@ -207,7 +207,7 @@ export class MainScene {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         `
-        float actualScale = 6.0; // 物理的な頂点移動のスケール
+        float actualScale = ${CONFIG.WATER.VISUAL_SCALE.toFixed(1)}; // 物理的な頂点移動のスケール
         vec3 transformed = vec3( position.x, position.y, texture2D( heightmap, uv ).r * actualScale );
         `
       );
@@ -235,6 +235,9 @@ export class MainScene {
     configs.forEach(conf => {
       const rodLength = conf.L;
       const xOffset = conf.xOffset;
+      const mass = conf.mass || 1.0;
+      // 質量(体積)に比例させるため、立方根でスケールする
+      const bobRadius = CONFIG.VISUALS.BASE_BOB_RADIUS * Math.cbrt(mass);
       const pivotY = 2.5 + rodLength; // 最下点 Y=2.5 を絶対維持
       
       this._bobStates.push({ wasIntersecting: false });
@@ -246,7 +249,9 @@ export class MainScene {
       this._pendulumArms.push(pivotArm);
 
       // ロッド（糸）
-      const rodGeo = new THREE.CylinderGeometry(ROD_RADIUS, ROD_RADIUS, rodLength, 16);
+      const rodGeo = new THREE.CylinderGeometry(
+        CONFIG.VISUALS.ROD_RADIUS, CONFIG.VISUALS.ROD_RADIUS, rodLength, 16
+      );
       const rodMat = makeMetal(0xb2bcc6, 0.12, 0.97);
       rodMat.transparent = true;
       
@@ -288,7 +293,7 @@ export class MainScene {
       pivotArm.add(rod);
 
       // ボブ
-      const bobGeo = new THREE.SphereGeometry(BOB_RADIUS, 128, 64);
+      const bobGeo = new THREE.SphereGeometry(bobRadius, 128, 64);
       const bob = new THREE.Mesh(
         bobGeo,
         new THREE.MeshStandardMaterial({
@@ -301,6 +306,8 @@ export class MainScene {
       bob.castShadow = true;
       pivotArm.add(bob);
       pivotArm.userData.bob = bob; // 衝突判定用に参照を保存
+      pivotArm.userData.bobRadius = bobRadius;
+      pivotArm.userData.mass = mass;
     });
   }
 
@@ -339,34 +346,35 @@ export class MainScene {
         const bob = pivotArm.userData.bob;
         const state = this._bobStates[i];
         
+        const bobRadius = pivotArm.userData.bobRadius || CONFIG.VISUALS.BASE_BOB_RADIUS;
+        const massMultiplier = Math.max(0.1, pivotArm.userData.mass || 1.0);
+        
         bob.getWorldPosition(bobWorldPos);
         const zDist = Math.abs(bobWorldPos.z);
         
         // Z=0 のガラス面との交差判定
-        const isIntersecting = (zDist < BOB_RADIUS);
+        const isIntersecting = (zDist < bobRadius);
         
         if (isIntersecting) {
            // 球が水面を通過する断面積の半径 (r = √(R^2 - z^2))
-           const crossRadius = Math.sqrt(BOB_RADIUS * BOB_RADIUS - zDist * zDist);
+           const crossRadius = Math.sqrt(bobRadius * bobRadius - zDist * zDist);
            
            // UV座標系(1.0 = 40m) における半径スケール
-           const uvRadius = Math.max(crossRadius / WATER_BOUNDS, 0.002);
+           const uvRadius = Math.max(crossRadius / CONFIG.WATER.BOUNDS, 0.002);
            
-           // 速度依存の強度計算 (速いほど強い)
-           const speedFactor = Math.abs(state.velocity || 0.0) * 0.3;
+           // 速度依存の強度計算 (質量が大きいほど威力が上がる)
+           const speedFactor = Math.abs(state.velocity || 0.0) * 0.3 * massMultiplier;
            
            if (!state.wasIntersecting) {
                // 【1】衝撃の瞬間：最も強いインパクト
                dropPosArr.push(new THREE.Vector2(bobWorldPos.x, bobWorldPos.y));
-               dropStrengthArr.push(-0.06 - speedFactor * 0.1); 
+               dropStrengthArr.push(-0.06 * massMultiplier - speedFactor * 0.1); 
                dropRadiusArr.push(uvRadius * 1.8); 
            }
            
            // 【2】通過中：断面積の変化と速度に応じた連続的な「かき乱し」
-           // 球の進行方向（VZ）に応じて、水を押し出す・引き込む表現を模倣
-           // zDist が 0 に近づく（進入中）ときは負、遠ざかるときは正の力を微弱に加える
            const vz = (state.velocity || 0) * Math.cos(pivotArm.rotation.x);
-           const volumeShift = -vz * (crossRadius / BOB_RADIUS) * 0.02;
+           const volumeShift = -vz * (crossRadius / bobRadius) * 0.02 * massMultiplier;
            
            if (Math.abs(volumeShift) > 0.0005) {
               dropPosArr.push(new THREE.Vector2(bobWorldPos.x, bobWorldPos.y));
