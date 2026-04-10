@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="暗闇とスポットライト — Three.js によるインタラクティブな静寂の情景"
+    />
+    <title>Historical Vanity — Spotlight</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@200;300&family=Outfit:wght@100;300&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Three.js CDN (importmap) -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+        }
+      }
+    </script>
+    
+    <script>
+      window.addEventListener('error', function(e) {
+        document.body.innerHTML += "<div style='color:red; font-size: 20px; font-weight: bold; position:absolute; top:20%; left:50%; transform:translateX(-50%); z-index:9999; background:white; padding:10px;'>[Error] " + e.message + "</div>";
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        document.body.innerHTML += "<div style='color:red; font-size: 20px; font-weight: bold; position:absolute; top:40%; left:50%; transform:translateX(-50%); z-index:9999; background:white; padding:10px;'>[Promise ERROR] " + (e.reason && e.reason.message ? e.reason.message : e.reason) + "</div>";
+      });
+    </script>
+
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+
+  <body>
+    <!-- WebGL Canvas -->
+    <canvas id="webgl-canvas"></canvas>
+
+    <!-- Overlay UI (最小限) -->
+    <div id="overlay">
+
+      <!-- 右下クレジット -->
+      <div id="credit">
+        <h1 id="site-title">Historical Vanity</h1>
+        <span>Three.js / WebGL</span>
+      </div>
+    </div>
+
+    <!-- Loading screen -->
+    <div id="loading-screen">
+      <div id="loading-inner">
+        <div id="loading-logo">HV</div>
+        <div id="loading-bar-track">
+          <div id="loading-bar-fill"></div>
+        </div>
+        <p id="loading-text">Loading...</p>
+      </div>
+    </div>
+
+    <script type="module" src="js/main.js?v=2"></script>
+  </body>
+</html>
