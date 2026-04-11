@@ -19,7 +19,7 @@ import { lerp } from "./utils.js";
 
 // 計算用フラグメントシェーダー（波の伝播とドロップの入力を行う）
 const heightmapFragmentShader = `
-uniform vec2 dropPos[16];
+uniform vec2 dropCoords[16];
 uniform float dropStrength[16];
 uniform float dropRadius[16];
 uniform int numDrops;
@@ -47,9 +47,16 @@ void main() {
   // マウス・振り子による衝撃処理
   for(int i = 0; i < 16; i++) {
     if(i >= numDrops) break;
-    // ワールド座標 を UV座標 (0.0 ～ 1.0) にマッピング
-    vec2 dropUV = (dropPos[i] + vec2(${CONFIG.WATER.BOUNDS / 2.0})) / ${CONFIG.WATER.BOUNDS.toFixed(1)};
-    float dist = distance(uv, dropUV);
+    vec2 dropUV = dropCoords[i];
+    
+    vec2 d = abs(uv - dropUV);
+    if(d.x > 0.5) d.x = 1.0 - d.x;
+    
+    // U方向はV方向の2倍の物理的広さを持つため、見た目の円形(アスペクト)を補正する
+    // ただし、極に近づくと横幅が狭まりますが、主戦場である赤道付近（Z=0前方）に合わせます
+    d.x *= 2.0; 
+    float dist = length(d);
+    
     // 断面積に応じた動的な半径
     if(dist < dropRadius[i] && dropRadius[i] > 0.0) { 
         // 中心が高い（または深い）滑らかなバンプを加算
@@ -149,19 +156,24 @@ export class MainScene {
     
     this.gpuCompute.setVariableDependencies( this.heightmapVariable, [ this.heightmapVariable ] );
     
-    // カスタムUniform変数の登録
-    this.heightmapVariable.material.uniforms[ "dropPos" ] = { value: Array(16).fill(null).map(() => new THREE.Vector2()) };
+    // カスタムUniform変数の登録（JSからU/V座標を直接渡す）
+    this.heightmapVariable.material.uniforms[ "dropCoords" ] = { value: Array(16).fill(null).map(() => new THREE.Vector2()) };
     this.heightmapVariable.material.uniforms[ "dropStrength" ] = { value: Array(16).fill(0) };
     this.heightmapVariable.material.uniforms[ "dropRadius" ] = { value: Array(16).fill(0.015) };
     this.heightmapVariable.material.uniforms[ "numDrops" ] = { value: 0 };
     
     this.gpuCompute.init();
 
-    // 2. 超高解像度のガラス平面
-    const glassGeo = new THREE.PlaneGeometry(
-      CONFIG.WATER.BOUNDS, CONFIG.WATER.BOUNDS, 
-      CONFIG.WATER.GPU_WIDTH - 1, CONFIG.WATER.GPU_WIDTH - 1
+    // 2. 超高解像度のガラス球体（惑星）
+    const glassGeo = new THREE.SphereGeometry(
+      CONFIG.WATER.SPHERE_RADIUS, 
+      CONFIG.WATER.GPU_WIDTH, CONFIG.WATER.GPU_WIDTH // 高解像度のメッシュ分割
     );
+    
+    // 地球儀テクスチャ（Specular map: 大陸が白、海が黒）を読み込み
+    const textureLoader = new THREE.TextureLoader();
+    const earthTex = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg');
+    
     const glassMat = new THREE.MeshStandardMaterial({
       color: 0x020a15,      // かなり暗いネイビーをベースに
       roughness: 0.35,      // 【ツヤを抑える】反射をすりガラスや柔らかい水面のように拡散させる
@@ -174,41 +186,78 @@ export class MainScene {
     // GPUからのハイトマップテクスチャを頂点にディスプレイスさせる処理
     glassMat.onBeforeCompile = ( shader ) => {
       shader.uniforms.heightmap = { value: null };
+      shader.uniforms.earthTex = { value: earthTex };
       
       shader.vertexShader = `
         uniform sampler2D heightmap;
+        varying vec2 vMyUv;
       ` + shader.vertexShader;
       
       // 法線（Normal）の再計算：隣り合う頂点の高さから傾きを出し、PBRライティングを正確に当てる
+      // 球体表面上の隣接要素の擬似計算に書き換え
       shader.vertexShader = shader.vertexShader.replace(
         '#include <beginnormal_vertex>',
         `
         vec2 texel = vec2( 1.0 / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)}, 1.0 / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)} );
-        float visualScale = ${CONFIG.WATER.VISUAL_SCALE.toFixed(1)}; // 波の見た目の高さを強調(ライティング用)
+        float visualScale = ${CONFIG.WATER.VISUAL_SCALE.toFixed(1)};
         float h    = texture2D( heightmap, uv ).r * visualScale;
         float hx   = texture2D( heightmap, uv + vec2( texel.x, 0.0 ) ).r * visualScale;
         float hy   = texture2D( heightmap, uv + vec2( 0.0, texel.y ) ).r * visualScale;
         
-        float stepX = ${CONFIG.WATER.BOUNDS.toFixed(1)} / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)};
-        float stepY = ${CONFIG.WATER.BOUNDS.toFixed(1)} / ${CONFIG.WATER.GPU_WIDTH.toFixed(1)};
+        vec3 baseNormal = normalize(position);
         
-        vec3 p0 = vec3( 0.0, 0.0, h );
-        vec3 px = vec3( stepX, 0.0, hx );
-        vec3 py = vec3( 0.0, stepY, hy );
+        // 擬似的な接線（U, V 進行方向のベクトルを近似）
+        vec3 tangent = normalize(cross(vec3(0.0, 1.0, 0.0), baseNormal));
+        if (length(tangent) < 0.001) tangent = vec3(1.0, 0.0, 0.0);
+        vec3 bitangent = normalize(cross(baseNormal, tangent));
         
-        vec3 vx = px - p0;
-        vec3 vy = py - p0;
+        // SphereのUV特性における各方向の全体の長さ
+        float arcLengthU = ${CONFIG.WATER.SPHERE_RADIUS.toFixed(1)} * 3.14159 * 2.0; 
+        float arcLengthV = ${CONFIG.WATER.SPHERE_RADIUS.toFixed(1)} * 3.14159; 
+        
+        vec3 p0 = position + baseNormal * h;
+        // UVの進み方向に応じた空間距離だけ接線を延ばして隣接頂点位置を近似
+        vec3 pX = position + tangent * (arcLengthU * texel.x) + baseNormal * hx;
+        vec3 pY = position - bitangent * (arcLengthV * texel.y) + baseNormal * hy;
+        
+        vec3 vx = pX - p0;
+        vec3 vy = pY - p0;
         
         vec3 objectNormal = normalize( cross( vx, vy ) );
+        if (dot(objectNormal, baseNormal) < 0.0) objectNormal = -objectNormal;
         `
       );
       
       // Z座標（ワールドでは手前奥）への高さ適用
+      // → 位置(position) を法線方向(baseNormal)に押し出すように修正
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         `
         float actualScale = ${CONFIG.WATER.VISUAL_SCALE.toFixed(1)}; // 物理的な頂点移動のスケール
-        vec3 transformed = vec3( position.x, position.y, texture2D( heightmap, uv ).r * actualScale );
+        vec3 transformed = position + normalize(position) * texture2D( heightmap, uv ).r * actualScale;
+        vMyUv = uv; // フラグメントシェーダーへ送る
+        `
+      );
+      
+      shader.fragmentShader = `
+        uniform sampler2D earthTex;
+        varying vec2 vMyUv;
+      ` + shader.fragmentShader;
+      
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <dithering_fragment>',
+        `
+        #include <dithering_fragment>
+        
+        // 陸地(白)と海(黒)の色情報 (左右が逆転しないようにマッピングを調整して正面を世界地図にするならvMyUvをそのまま)
+        float continent = texture2D(earthTex, vMyUv).r;
+        
+        // 大陸部分は、うっすらと発光感のあるシアンブルー・ホワイトを載せる
+        vec3 globeColor = vec3(0.08, 0.45, 0.70); // 美しい青みがかったガラス色
+        gl_FragColor.rgb += globeColor * continent * 0.35;
+        
+        // 透明度。海(0.0)は元の opacity、陸地(1.0)は少しだけ不透明(1.0に近づく)
+        gl_FragColor.a = clamp(gl_FragColor.a + continent * 0.05, 0.0, 1.0);
         `
       );
       
@@ -216,8 +265,8 @@ export class MainScene {
     };
 
     this._glass = new THREE.Mesh(glassGeo, glassMat);
-    // スポットライトの照射範囲だけで暗闇に溶け込むよう設定しているため、背景処理は不要
-    this._glass.position.set(0, 0, 0);
+    // Z座標を -SPHERE_RADIUS ずらすことで、手前の表面が Z=0 の平面と同じ位置になります
+    this._glass.position.set(0, 0, -CONFIG.WATER.SPHERE_RADIUS);
     this._glass.receiveShadow = true; 
     this.scene.add(this._glass);
   }
@@ -334,11 +383,12 @@ export class MainScene {
   // ------------------------------------------------------------------
   // 波紋エフェクト (物理的な交差面積と速度に基づく連続生成)
   updateRipples(dt) {
-    const dropPosArr = [];
+    const dropCoordsArr = [];
     const dropStrengthArr = [];
     const dropRadiusArr = [];
     
     const bobWorldPos = new THREE.Vector3();
+    const sphereCenter = new THREE.Vector3(0, 0, -CONFIG.WATER.SPHERE_RADIUS);
 
     for (let i = 0; i < this._pendulumArms.length; i++) {
         const pivotArm = this._pendulumArms[i];
@@ -350,34 +400,47 @@ export class MainScene {
         const massMultiplier = Math.max(0.1, pivotArm.userData.mass || 1.0);
         
         bob.getWorldPosition(bobWorldPos);
-        const zDist = Math.abs(bobWorldPos.z);
         
-        // Z=0 のガラス面との交差判定
-        const isIntersecting = (zDist < bobRadius);
-        
-        if (isIntersecting) {
-           // 球が水面を通過する断面積の半径 (r = √(R^2 - z^2))
-           const crossRadius = Math.sqrt(bobRadius * bobRadius - zDist * zDist);
+           // 球体中心からの距離
+           const distFromCenter = bobWorldPos.distanceTo(sphereCenter);
+           // 球体表面からの距離
+           const zDist = Math.abs(distFromCenter - CONFIG.WATER.SPHERE_RADIUS);
            
-           // UV座標系(1.0 = 40m) における半径スケール
-           const uvRadius = Math.max(crossRadius / CONFIG.WATER.BOUNDS, 0.002);
+           // 表面との交差判定
+           const isIntersecting = (zDist < bobRadius);
+           
+           if (isIntersecting) {
+              // 球同士が交差する断面積の半径 (r = √(r^2 - 表面距離^2))
+              const crossRadius = Math.sqrt(bobRadius * bobRadius - zDist * zDist);
+              
+              // UV座標系はV方向が狭いため、少し大きめのドロップを入力する
+              const uvRadius = Math.max(crossRadius / (CONFIG.WATER.SPHERE_RADIUS * 1.5), 0.005);
+              
+              // 地球儀が自転しているため、衝突点（ワールド座標）を球体のローカル座標へ変換する
+              const localPos = this._glass.worldToLocal(bobWorldPos.clone());
+              // ローカル方向ベクトルから球体UV(緯度・経度)を算出
+              const localDir = localPos.normalize();
+              // Three.js の SphereGeometry におけるUV生成式に合わせて完全一致させる
+           let u = Math.atan2(localDir.z, -localDir.x) / (2.0 * Math.PI);
+           if (u < 0) u += 1.0; // 0.0 ~ 1.0に正規化
+           const v = Math.acos(Math.max(-1.0, Math.min(1.0, localDir.y))) / Math.PI;
            
            // 速度依存の強度計算 (質量が大きいほど威力が上がる)
-           const speedFactor = Math.abs(state.velocity || 0.0) * 0.3 * massMultiplier;
+           const speedFactor = Math.abs(state.velocity || 0.0) * 0.5 * massMultiplier;
            
            if (!state.wasIntersecting) {
                // 【1】衝撃の瞬間：最も強いインパクト
-               dropPosArr.push(new THREE.Vector2(bobWorldPos.x, bobWorldPos.y));
-               dropStrengthArr.push(-0.06 * massMultiplier - speedFactor * 0.1); 
-               dropRadiusArr.push(uvRadius * 1.8); 
+               dropCoordsArr.push(new THREE.Vector2(u, v));
+               dropStrengthArr.push(-0.15 * massMultiplier - speedFactor * 0.2); // エネルギーと視認性を上げる
+               dropRadiusArr.push(uvRadius * 2.5); 
            }
            
            // 【2】通過中：断面積の変化と速度に応じた連続的な「かき乱し」
            const vz = (state.velocity || 0) * Math.cos(pivotArm.rotation.x);
-           const volumeShift = -vz * (crossRadius / bobRadius) * 0.02 * massMultiplier;
+           const volumeShift = -vz * (crossRadius / bobRadius) * 0.1 * massMultiplier; // 連続かき乱しの強度アップ
            
            if (Math.abs(volumeShift) > 0.0005) {
-              dropPosArr.push(new THREE.Vector2(bobWorldPos.x, bobWorldPos.y));
+              dropCoordsArr.push(new THREE.Vector2(u, v));
               dropStrengthArr.push(volumeShift);
               dropRadiusArr.push(uvRadius);
            }
@@ -388,11 +451,11 @@ export class MainScene {
 
     // Compute Shader の Uniforms に発火したてのドロップ情報を詰める
     const uniforms = this.heightmapVariable.material.uniforms;
-    const count = Math.min(dropPosArr.length, 16);
+    const count = Math.min(dropCoordsArr.length, 16);
     uniforms.numDrops.value = count;
     
     for(let i=0; i<count; i++) {
-        uniforms.dropPos.value[i].copy(dropPosArr[i]);
+        uniforms.dropCoords.value[i].copy(dropCoordsArr[i]);
         uniforms.dropStrength.value[i] = dropStrengthArr[i];
         uniforms.dropRadius.value[i] = dropRadiusArr[i];
     }
@@ -415,9 +478,10 @@ export class MainScene {
     this.camera.updateProjectionMatrix();
   }
 
-  update() {
-    // 振り子以外のシーン側の毎フレーム更新処理（アニメーション等）があればここに記載
-    // カメラの制御は main.js 側の OrbitControls が担うように変更したため削除
+  update(dt) {
+    if (dt && this._glass) {
+      this._glass.rotation.y += (CONFIG.WATER.SPHERE_ROTATION_SPEED || 0) * dt;
+    }
   }
 
   render() {

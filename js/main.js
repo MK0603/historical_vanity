@@ -103,7 +103,7 @@ function tick(timestamp) {
 
   controls.update();                   // Damping 適用のため毎フレーム更新
   fpsCounter.tick();
-  mainScene.update();
+  mainScene.update(dt);
   mainScene.render();
 }
 
