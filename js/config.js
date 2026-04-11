@@ -41,7 +41,7 @@ export const CONFIG = {
     BOUNDS: 40.0,
 
     // 波の消えやすさ (0.999=なかなか消えない, 0.90=ドロドロですぐ消える)
-    WAVE_DAMPING: 0.998,
+    WAVE_DAMPING: 0.9986,
 
     // 波の伝播スピード (2.0が標準的)
     WAVE_SPEED: 2.0,
