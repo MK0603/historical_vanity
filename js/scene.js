@@ -106,9 +106,9 @@ export class MainScene {
       0.1,
       5000
     );
-    // 振り子を正面やや下から見上げる構図
-    this.camera.position.set(0, 5.5, 18);
-    this.camera.lookAt(0, 5.5, 0);
+    // 振り子(Y=2.5)を中心に地球儀全体を見渡せる位置へ大きく下げる
+    this.camera.position.set(0, 8.0, 55.0);
+    this.camera.lookAt(0, 2.5, 0);
   }
 
   _buildLights() {
@@ -401,52 +401,90 @@ export class MainScene {
         
         bob.getWorldPosition(bobWorldPos);
         
-           // 球体中心からの距離
-           const distFromCenter = bobWorldPos.distanceTo(sphereCenter);
-           // 球体表面からの距離
-           const zDist = Math.abs(distFromCenter - CONFIG.WATER.SPHERE_RADIUS);
-           
-           // 表面との交差判定
-           const isIntersecting = (zDist < bobRadius);
-           
-           if (isIntersecting) {
-              // 球同士が交差する断面積の半径 (r = √(r^2 - 表面距離^2))
-              const crossRadius = Math.sqrt(bobRadius * bobRadius - zDist * zDist);
-              
-              // UV座標系はV方向が狭いため、少し大きめのドロップを入力する
-              const uvRadius = Math.max(crossRadius / (CONFIG.WATER.SPHERE_RADIUS * 1.5), 0.005);
-              
-              // 地球儀が自転しているため、衝突点（ワールド座標）を球体のローカル座標へ変換する
-              const localPos = this._glass.worldToLocal(bobWorldPos.clone());
-              // ローカル方向ベクトルから球体UV(緯度・経度)を算出
-              const localDir = localPos.normalize();
-              // Three.js の SphereGeometry におけるUV生成式に合わせて完全一致させる
-           let u = Math.atan2(localDir.z, -localDir.x) / (2.0 * Math.PI);
-           if (u < 0) u += 1.0; // 0.0 ~ 1.0に正規化
-           const v = Math.acos(Math.max(-1.0, Math.min(1.0, localDir.y))) / Math.PI;
-           
-           // 速度依存の強度計算 (質量が大きいほど威力が上がる)
-           const speedFactor = Math.abs(state.velocity || 0.0) * 0.5 * massMultiplier;
-           
-           if (!state.wasIntersecting) {
-               // 【1】衝撃の瞬間：最も強いインパクト
-               dropCoordsArr.push(new THREE.Vector2(u, v));
-               dropStrengthArr.push(-0.15 * massMultiplier - speedFactor * 0.2); // エネルギーと視認性を上げる
-               dropRadiusArr.push(uvRadius * 2.5); 
-           }
-           
-           // 【2】通過中：断面積の変化と速度に応じた連続的な「かき乱し」
-           const vz = (state.velocity || 0) * Math.cos(pivotArm.rotation.x);
-           const volumeShift = -vz * (crossRadius / bobRadius) * 0.1 * massMultiplier; // 連続かき乱しの強度アップ
-           
-           if (Math.abs(volumeShift) > 0.0005) {
-              dropCoordsArr.push(new THREE.Vector2(u, v));
-              dropStrengthArr.push(volumeShift);
-              dropRadiusArr.push(uvRadius);
-           }
+        // 状態の初期化
+        if (!state.prevWorldPos) {
+            state.prevWorldPos = bobWorldPos.clone();
+            state.waterState = "AIR"; 
         }
         
-        if (state) state.wasIntersecting = isIntersecting;
+        // 前フレームとの差分から三次元ベクトル速度を算出（数学的に無欠）
+        const dtSafe = dt > 0 ? dt : 0.016;
+        const velocityVec = new THREE.Vector3().subVectors(bobWorldPos, state.prevWorldPos).divideScalar(dtSafe);
+        state.prevWorldPos.copy(bobWorldPos);
+        
+        // 球体中心からの距離と表面からの深さ
+        const distFromCenter = bobWorldPos.distanceTo(sphereCenter);
+        const depth = CONFIG.WATER.SPHERE_RADIUS - distFromCenter; 
+        
+        // 状態マシンの判定
+        let currentState = "AIR";
+        if (depth > bobRadius) {
+            currentState = "SUBMERGED"; // 完全に沈んでいる
+        } else if (depth > -bobRadius) {
+            currentState = "CROSSING";  // 水面通過中
+        }
+        
+        // 地球儀のローカルUV座標と法線（向き）の算出
+        const localPos = this._glass.worldToLocal(bobWorldPos.clone());
+        const normalDir = localPos.clone().normalize();
+        
+        // 水面に対して垂直に動く速度（＋なら外へ抜ける、−なら内へ潜る）
+        const v_surf = normalDir.dot(velocityVec);
+        
+        // 交差面の半径
+        const zDist = Math.abs(depth);
+        let crossRadius = 0;
+        if (currentState === "CROSSING") {
+             crossRadius = Math.sqrt(Math.max(0, bobRadius * bobRadius - zDist * zDist));
+        }
+        
+        const uvRadius = Math.max(crossRadius / (CONFIG.WATER.SPHERE_RADIUS * 1.5), 0.005);
+        
+        // Three.js の SphereGeometry におけるUV生成式に合わせて完全一致させる
+        let u = Math.atan2(normalDir.z, -normalDir.x) / (2.0 * Math.PI);
+        if (u < 0) u += 1.0; // 0.0 ~ 1.0に正規化
+        
+        // V座標の反転: Three.jsのSphereGeometryではV=1が北極、V=0が南極であるため反転が必要
+        const v = 1.0 - (Math.acos(Math.max(-1.0, Math.min(1.0, normalDir.y))) / Math.PI);
+           
+        // ========= タイミング分岐による波紋発生 =========
+        if (currentState === "CROSSING") {
+           
+           if (state.waterState === "AIR") {
+               // 【1】ENTRY (激突) : 水面が押し込まれる
+               dropCoordsArr.push(new THREE.Vector2(u, v));
+               dropStrengthArr.push(-0.25 * massMultiplier - Math.abs(v_surf) * 0.1); 
+               dropRadiusArr.push(uvRadius * 3.5); 
+           } else if (state.waterState === "SUBMERGED") {
+               // 【2】EMERGE (脱出開始) : 水中から押し上げられる
+               dropCoordsArr.push(new THREE.Vector2(u, v));
+               dropStrengthArr.push(0.20 * massMultiplier + Math.abs(v_surf) * 0.05); 
+               dropRadiusArr.push(uvRadius * 3.5); 
+           } else {
+               // 【3】CROSSING中 : 断面積と速度に応じたかき乱し
+               const volumeShift = v_surf * (crossRadius / bobRadius) * 0.08 * massMultiplier;
+               if (Math.abs(volumeShift) > 0.0005) {
+                  dropCoordsArr.push(new THREE.Vector2(u, v));
+                  dropStrengthArr.push(volumeShift);
+                  dropRadiusArr.push(uvRadius);
+               }
+           }
+           
+        } else if (currentState === "AIR" && state.waterState === "CROSSING") {
+             // 【4】EXIT (完全脱出) : 水から完全に飛び出した後の弾け
+             dropCoordsArr.push(new THREE.Vector2(u, v));
+             dropStrengthArr.push(-0.15 * massMultiplier);
+             dropRadiusArr.push((bobRadius / (CONFIG.WATER.SPHERE_RADIUS * 1.5)) * 1.5);
+             
+        } else if (currentState === "SUBMERGED" && state.waterState === "CROSSING") {
+             // 【5】SINK (完全沈没) : 表面が閉じる時の跳ね返り
+             dropCoordsArr.push(new THREE.Vector2(u, v));
+             dropStrengthArr.push(0.15 * massMultiplier);
+             dropRadiusArr.push((bobRadius / (CONFIG.WATER.SPHERE_RADIUS * 1.5)) * 1.5);
+        }
+        
+        // 状態を記憶
+        state.waterState = currentState;
     }
 
     // Compute Shader の Uniforms に発火したてのドロップ情報を詰める
