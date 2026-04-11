@@ -12,7 +12,12 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { MainScene } from "./scene.js?v=2";
 import { PendulumController } from "./pendulum.js?v=2";
-import { getViewport, normalizeMousePosition, animateLoadingBar, FpsCounter } from "./utils.js";
+import {
+  getViewport,
+  normalizeMousePosition,
+  animateLoadingBar,
+  FpsCounter,
+} from "./utils.js";
 import { CONFIG } from "./config.js";
 
 // ============================================================
@@ -57,12 +62,14 @@ const mainScene = new MainScene(renderer);
 // ============================================================
 // 振り子 物理コントローラー（config.jsから動的生成）
 // ============================================================
-const pendulums = CONFIG.PENDULUMS.map(p => 
-  new PendulumController(p.period, p.xOffset, p.mass)
+const pendulums = CONFIG.PENDULUMS.map(
+  (p) => new PendulumController(p.period, p.xOffset, p.mass),
 );
 
 // scene 側に長さと位置、質量を渡して3Dモデルを構築させる
-mainScene.initPendulums(pendulums.map(p => ({ L: p.L, xOffset: p.xOffset, mass: p.getMass() })));
+mainScene.initPendulums(
+  pendulums.map((p) => ({ L: p.L, xOffset: p.xOffset, mass: p.getMass() })),
+);
 // ============================================================
 // OrbitControls (カメラぐりぐり操作)
 // ============================================================
@@ -93,15 +100,15 @@ function tick(timestamp) {
   const velocities = [];
   for (let i = 0; i < pendulums.length; i++) {
     const p = pendulums[i];
-    p.update(timestamp);        // RK4 物理演算
+    p.update(timestamp); // RK4 物理演算
     angles.push(p.getAngle());
     velocities.push(p.getVelocity());
   }
 
   mainScene.setPendulumStates(angles, velocities); // 角度と速度をシーンに反映
-  mainScene.updateRipples(dt);                     // 波紋のアニメーション物理更新
+  mainScene.updateRipples(dt); // 波紋のアニメーション物理更新
 
-  controls.update();                   // Damping 適用のため毎フレーム更新
+  controls.update(); // Damping 適用のため毎フレーム更新
   fpsCounter.tick();
   mainScene.update(dt);
   mainScene.render();

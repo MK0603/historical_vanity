@@ -45,9 +45,9 @@ npx serve .
 
 ## カスタマイズポイント
 
-| ファイル | 変更内容 |
-|---|---|
-| `js/scene.js` の `_buildParticles()` | パーティクル数・色・配置 |
-| `js/scene.js` の `_buildCenterMesh()` | 中心ジオメトリを差し替え |
-| `css/style.css` の `:root` | カラーパレット変更 |
-| `js/main.js` の `enterBtn` ハンドラ | 「体験を始める」ボタン後の遷移ロジック |
+| ファイル                              | 変更内容                               |
+| ------------------------------------- | -------------------------------------- |
+| `js/scene.js` の `_buildParticles()`  | パーティクル数・色・配置               |
+| `js/scene.js` の `_buildCenterMesh()` | 中心ジオメトリを差し替え               |
+| `css/style.css` の `:root`            | カラーパレット変更                     |
+| `js/main.js` の `enterBtn` ハンドラ   | 「体験を始める」ボタン後の遷移ロジック |

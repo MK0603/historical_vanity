@@ -35,26 +35,33 @@ export class PendulumController {
     this.thetaMax = Math.asin(CONFIG.PHYSICS.TARGET_AMPLITUDE / this.L);
 
     // リロード時に「画面真ん中の最下点」からスタートさせる
-    this._theta    = 0; 
+    this._theta = 0;
     // 力学的エネルギー保存則に基づく最高点到達に必要な中心での速度
-    this._omega    = Math.sqrt((2 * G / this.L) * (1 - Math.cos(this.thetaMax))); 
-    this._lastTime = null;   // 前フレームのタイムスタンプ [ms]
+    this._omega = Math.sqrt(((2 * G) / this.L) * (1 - Math.cos(this.thetaMax)));
+    this._lastTime = null; // 前フレームのタイムスタンプ [ms]
     this._crossedCenter = false; // 最下点通過フラグ
   }
 
   // ─── 状態微分関数 ─────────────────────────────────────────
   _derivatives(theta, omega) {
     const dTheta = omega;
-    const dOmega = -(G / this.L) * Math.sin(theta) - CONFIG.PHYSICS.DAMPING * omega;
+    const dOmega =
+      -(G / this.L) * Math.sin(theta) - CONFIG.PHYSICS.DAMPING * omega;
     return [dTheta, dOmega];
   }
 
   // ─── RK4 積分 ─────────────────────────────────────────────
   _rk4Step(theta, omega, dt) {
-    const [k1t, k1o] = this._derivatives(theta,                   omega);
-    const [k2t, k2o] = this._derivatives(theta + 0.5 * dt * k1t, omega + 0.5 * dt * k1o);
-    const [k3t, k3o] = this._derivatives(theta + 0.5 * dt * k2t, omega + 0.5 * dt * k2o);
-    const [k4t, k4o] = this._derivatives(theta +        dt * k3t, omega +        dt * k3o);
+    const [k1t, k1o] = this._derivatives(theta, omega);
+    const [k2t, k2o] = this._derivatives(
+      theta + 0.5 * dt * k1t,
+      omega + 0.5 * dt * k1o,
+    );
+    const [k3t, k3o] = this._derivatives(
+      theta + 0.5 * dt * k2t,
+      omega + 0.5 * dt * k2o,
+    );
+    const [k4t, k4o] = this._derivatives(theta + dt * k3t, omega + dt * k3o);
 
     const newTheta = theta + (dt / 6) * (k1t + 2 * k2t + 2 * k3t + k4t);
     const newOmega = omega + (dt / 6) * (k1o + 2 * k2o + 2 * k3o + k4o);
@@ -69,7 +76,7 @@ export class PendulumController {
   update(timestamp) {
     // typeof ガード: 引数なし直接呼び出し（tick()）で
     // timestamp = undefined になる場合は NaN 伝播を防ぐためスキップ
-    if (typeof timestamp !== 'number') return;
+    if (typeof timestamp !== "number") return;
 
     // 初回フレームはスキップ（dt が不定のため）
     if (this._lastTime === null) {

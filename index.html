@@ -26,13 +26,19 @@
         }
       }
     </script>
-    
+
     <script>
-      window.addEventListener('error', function(e) {
-        document.body.innerHTML += "<div style='color:red; font-size: 20px; font-weight: bold; position:absolute; top:20%; left:50%; transform:translateX(-50%); z-index:9999; background:white; padding:10px;'>[Error] " + e.message + "</div>";
+      window.addEventListener("error", function (e) {
+        document.body.innerHTML +=
+          "<div style='color:red; font-size: 20px; font-weight: bold; position:absolute; top:20%; left:50%; transform:translateX(-50%); z-index:9999; background:white; padding:10px;'>[Error] " +
+          e.message +
+          "</div>";
       });
-      window.addEventListener('unhandledrejection', function(e) {
-        document.body.innerHTML += "<div style='color:red; font-size: 20px; font-weight: bold; position:absolute; top:40%; left:50%; transform:translateX(-50%); z-index:9999; background:white; padding:10px;'>[Promise ERROR] " + (e.reason && e.reason.message ? e.reason.message : e.reason) + "</div>";
+      window.addEventListener("unhandledrejection", function (e) {
+        document.body.innerHTML +=
+          "<div style='color:red; font-size: 20px; font-weight: bold; position:absolute; top:40%; left:50%; transform:translateX(-50%); z-index:9999; background:white; padding:10px;'>[Promise ERROR] " +
+          (e.reason && e.reason.message ? e.reason.message : e.reason) +
+          "</div>";
       });
     </script>
 
@@ -45,7 +51,6 @@
 
     <!-- Overlay UI (最小限) -->
     <div id="overlay">
-
       <!-- 右下クレジット -->
       <div id="credit">
         <h1 id="site-title">Historical Vanity</h1>
