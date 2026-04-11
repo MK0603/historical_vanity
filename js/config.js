@@ -65,11 +65,11 @@ export const CONFIG = {
   // 4. 初期の振り子配置設定 (PENDULUMS)
   // ==========================================
   PENDULUMS: [
-    { period: 23.0, xOffset: -8.5, mass: 1.0 }, // 左側: 短い周期、基準重量 (比率1)
+    { period: 23.0, xOffset: -8.5, mass: 1.6 }, // 左側: 短い周期、基準重量 (比率1)
     { period: 47.0, xOffset: -4.5, mass: 4.0 }, // 中央: 基準周期、重い (比率2)
     { period: 113.0, xOffset: 0.0, mass: 8.0 }, // 右側: 長い周期、非常に重い (比率4)
     { period: 53.0, xOffset: 4.0, mass: 6.0 }, // 中央: 基準周期、重い (比率2)
-    { period: 17.0, xOffset: 7.5, mass: 1.0 }, // 左側: 短い周期、基準重量 (比率1)
+    { period: 17.0, xOffset: 7.5, mass: 1.2 }, // 左側: 短い周期、基準重量 (比率1)
   ],
 };
 
