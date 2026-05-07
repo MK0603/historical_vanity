@@ -80,8 +80,8 @@ export class PendulumController {
    * @param {number} absoluteTime 
    */
   sync(absoluteTime) {
-    // 基準時刻（2024-01-01）からの経過時間を使用
-    const epoch = 1704067200; 
+    // 基準時刻（config.js の EPOCH_MS）からの経過時間を使用
+    const epoch = (CONFIG.PHYSICS.EPOCH_MS || 0) / 1000;
     const elapsed = Math.max(0, absoluteTime - epoch);
     const timeInCycle = elapsed % this._actualPeriod;
     

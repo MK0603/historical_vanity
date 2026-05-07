@@ -561,8 +561,8 @@ export class MainScene {
 
   update(dt) {
     if (this._glass) {
-      // 絶対時間（秒）を取得
-      const absoluteTime = Date.now() / 1000;
+      // 基準時刻（2024-01-01）からの経過秒数を取得
+      const absoluteTime = (Date.now() - (CONFIG.PHYSICS.EPOCH_MS || 0)) / 1000;
       // 読み込みのたびにリセットされないよう、絶対時間に基づいた角度を直接セットする
       this._glass.rotation.y = absoluteTime * (CONFIG.WATER.SPHERE_ROTATION_SPEED || 0);
     }
