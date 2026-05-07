@@ -560,8 +560,11 @@ export class MainScene {
   }
 
   update(dt) {
-    if (dt && this._glass) {
-      this._glass.rotation.y += (CONFIG.WATER.SPHERE_ROTATION_SPEED || 0) * dt;
+    if (this._glass) {
+      // 絶対時間（秒）を取得
+      const absoluteTime = Date.now() / 1000;
+      // 読み込みのたびにリセットされないよう、絶対時間に基づいた角度を直接セットする
+      this._glass.rotation.y = absoluteTime * (CONFIG.WATER.SPHERE_ROTATION_SPEED || 0);
     }
   }
 
